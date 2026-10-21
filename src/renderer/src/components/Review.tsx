@@ -1,9 +1,10 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Circle, CircleCheck, Pencil, RefreshCw, ScanLine, Undo2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Circle, CircleCheck, Pencil, RefreshCw, ScanLine, Undo2, ZoomIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { isExtractable, isFieldColumn } from '../../../shared/columns';
 import type { Box, Column, DocMeta } from '../../../shared/types';
 import { buildLineInfos, findLineInfo, lineBox } from '../lib/doctext';
 import { formatFieldValue } from '../lib/format';
+import { buildLensSteps } from '../lib/lens';
 import { pickFromWord, positionsFromLines, positionsFromText, valueFromText, wordsInBox } from '../lib/pick';
 import { enqueueScan, ocrBox } from '../lib/scan';
 import {
@@ -12,6 +13,7 @@ import {
   focusFieldEditor,
   gotoNextUnverified,
   gotoRelative,
+  openLens,
   setActive,
   setField,
   setPositions,
@@ -20,6 +22,7 @@ import {
   useStore,
   type ActiveTarget
 } from '../store';
+import { LensDialog } from './LensDialog';
 import { StatusPill } from './Overview';
 import { PdfViewer, type Highlight } from './PdfViewer';
 import { ChecksCard, FieldEditor, MetaCard, PositionsEditor, SheetPreview } from './ReviewPanels';
@@ -64,6 +67,7 @@ export function Review() {
   const queue = useStore((s) => s.reviewQueue);
   const docIds = useStore((s) => s.docs.map((d) => d.id).join('|'));
   const scanStage = useStore((s) => (s.currentDocId ? s.runtime[s.currentDocId]?.stage : undefined));
+  const lensOpen = useStore((s) => Boolean(s.lens && s.lens.docId === s.currentDocId));
   const [busy, setBusy] = useState<string | null>(null);
   const [leftW, setLeftW] = useState(() => Number(localStorage.getItem('bf.leftW')) || 45);
   const [dragging, setDragging] = useState(false);
@@ -254,6 +258,20 @@ export function Review() {
     gotoNextUnverified();
   }, [doc]);
 
+  const startLens = useCallback(() => {
+    if (!doc) return;
+    if (doc.status !== 'scanned' && doc.status !== 'verified') {
+      toast('info', 'Bitte das Dokument zuerst scannen.');
+      return;
+    }
+    if (!buildLensSteps(doc, columns, settings, infos).steps.length) {
+      toast('info', 'Kein erfasster Wert hat eine Fundstelle im PDF – im Linsenmodus gibt es nichts zu vergleichen.');
+      return;
+    }
+    (document.activeElement as HTMLElement | null)?.blur();
+    openLens();
+  }, [doc, columns, settings, infos]);
+
   const rescan = useCallback(async () => {
     if (!doc) return;
     if (doc.status === 'verified' || Object.values(doc.fields).some((f) => f.source === 'manual' || f.source === 'pick' || f.source === 'box')) {
@@ -268,10 +286,11 @@ export function Review() {
     enqueueScan([doc.id]);
   }, [doc]);
 
-  // Tastatur: Esc, Ctrl+Enter, Alt+←/→, 1–9
+  // Tastatur: Esc, Ctrl+Enter, Alt+←/→, 1–9, L
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (useStore.getState().dialog || useStore.getState().confirm) return;
+      const s = useStore.getState();
+      if (s.dialog || s.confirm || s.lens) return;
       if (e.key === 'Escape' && !isTyping()) {
         setActive(null);
         return;
@@ -290,11 +309,16 @@ export function Review() {
       if (!isTyping() && !e.ctrlKey && !e.altKey && /^[1-9]$/.test(e.key)) {
         const col = chipCols[Number(e.key) - 1];
         if (col) setActive(col.type === 'positions' ? { kind: 'positions' } : { kind: 'field', columnId: col.id });
+        return;
+      }
+      if (!isTyping() && !e.ctrlKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault();
+        startLens();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [chipCols, verifyAndNext]);
+  }, [chipCols, verifyAndNext, startLens]);
 
   // Teiler zwischen Ergebnis und PDF
   useEffect(() => {
@@ -352,6 +376,9 @@ export function Review() {
               <Undo2 /> Ungeprüft
             </button>
           ) : null}
+          <button className="btn" onClick={startLens} disabled={scanning || notScanned} title="Erfasste Werte Schritt für Schritt vergrössert mit dem PDF vergleichen (L)">
+            <ZoomIn /> Linsenmodus <span className="kbd">L</span>
+          </button>
           <button className="btn btn-success" onClick={verifyAndNext} disabled={scanning || notScanned} title="Als geprüft markieren und zum nächsten Dokument (Ctrl+Enter)">
             <CircleCheck /> Geprüft &amp; weiter <span className="kbd">Ctrl+↵</span>
           </button>
@@ -422,6 +449,7 @@ export function Review() {
           />
         </div>
       </div>
+      {lensOpen && <LensDialog doc={doc} bytes={bytes} />}
     </div>
   );
 }

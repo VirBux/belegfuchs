@@ -2111,3 +2111,287 @@ textarea.input {
   width: 15px;
   height: 15px;
 }
+
+/* ---------- Linsenmodus ---------- */
+
+.lens-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Über den Hinweisen (Toasts), damit nichts die Knöpfe verdeckt */
+  z-index: 400;
+  display: grid;
+  place-items: center;
+  background: rgba(24, 26, 30, 0.55);
+  animation: fade 0.12s ease-out;
+}
+.lens {
+  --c: var(--accent);
+  /* Feste Grösse: nichts darf beim Weiterschalten springen */
+  width: min(1180px, calc(100vw - 48px));
+  height: min(680px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: 60px 3px minmax(0, 1fr) 34px 62px;
+  grid-template-columns: minmax(0, 1fr);
+  background: var(--surface);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: pop 0.15s ease-out;
+}
+.lens-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px 0 20px;
+  min-width: 0;
+}
+.lens-head .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent-600);
+  white-space: nowrap;
+}
+.lens-head .eyebrow svg {
+  width: 15px;
+  height: 15px;
+}
+.lens-head .field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--c);
+}
+.lens-head .field .sw {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--c);
+}
+.lens-head .field .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lens-head .field .src {
+  flex: none;
+  font-family: var(--font);
+}
+.lens-head .count {
+  min-width: 72px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lens-progress {
+  background: var(--surface-3);
+}
+.lens-progress i {
+  display: block;
+  height: 100%;
+  background: var(--c);
+  transition: width 0.15s ease-out;
+}
+.lens-stage {
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr);
+  padding: 10px 22px 0;
+  min-height: 0;
+  background: var(--surface-2);
+}
+.lens-captions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-3);
+}
+.lens-captions span {
+  text-align: center;
+}
+.lens-captions.hidden {
+  visibility: hidden;
+}
+.lens-rows {
+  display: grid;
+  grid-template-rows: repeat(var(--rows, 1), minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+}
+.lens-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr);
+  min-height: 0;
+}
+.lens-pane {
+  position: relative;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: center;
+  padding: 19px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.lens-pane.paper {
+  background: #fff;
+  border-color: color-mix(in srgb, var(--c) 35%, var(--border));
+}
+.lens-tag {
+  position: absolute;
+  top: 7px;
+  left: 11px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-3);
+}
+.lens-fit {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.lens-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+.lens-value.empty {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.lens-detail {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 16px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.lens-eq {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+.lens-eq svg {
+  width: 22px;
+  height: 22px;
+}
+.lens-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 100%;
+  max-height: 100%;
+}
+.lens-crop {
+  display: block;
+  max-width: 100%;
+  object-fit: contain;
+  background: #fff;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent);
+}
+.lens-none {
+  color: var(--text-3);
+  font-size: 13px;
+}
+.lens-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 60px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.lens-summary .big {
+  width: 54px;
+  height: 54px;
+  color: var(--ok);
+  margin-bottom: 8px;
+}
+.lens-summary h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+}
+.lens-summary p {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  max-width: 640px;
+}
+.lens-summary p.muted {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.lens-note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 22px;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.lens-note span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lens-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-top: 1px solid var(--border);
+}
+.lens-foot .spacer {
+  flex: 1;
+}
+.lens-foot .lens-next {
+  /* Gleiche Breite für «Stimmt» und «Geprüft & weiter»: der Knopf bleibt an seiner Stelle */
+  width: 196px;
+  justify-content: center;
+}
+.lens-hint {
+  margin-right: 6px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}

@@ -57,6 +57,8 @@ export interface AppState {
   reveal: { box: Box; nonce: number } | null;
   confirm: ConfirmRequest | null;
   settingsTab: string;
+  /** Linsenmodus: aktueller Schritt (Index = Anzahl Schritte → Zusammenfassung); null = geschlossen. */
+  lens: { docId: string; step: number } | null;
 }
 
 export const useStore = create<AppState>(() => ({
@@ -80,7 +82,8 @@ export const useStore = create<AppState>(() => ({
   focusField: null,
   reveal: null,
   confirm: null,
-  settingsTab: 'ai'
+  settingsTab: 'ai',
+  lens: null
 }));
 
 const get = useStore.getState;
@@ -231,7 +234,7 @@ export function setSelected(ids: string[]): void {
 // ---------- Ansicht / Prüfmodus ----------
 
 export function openReview(docId: string, queue: string[] | null = null): void {
-  set({ view: 'review', currentDocId: docId, reviewQueue: queue, active: null });
+  set({ view: 'review', currentDocId: docId, reviewQueue: queue, active: null, lens: null });
 }
 
 export function startReviewMode(ids?: string[]): boolean {
@@ -248,7 +251,7 @@ export function startReviewMode(ids?: string[]): boolean {
 }
 
 export function closeReview(): void {
-  set({ view: 'overview', active: null });
+  set({ view: 'overview', active: null, lens: null });
 }
 
 function navigationList(): string[] {
@@ -261,7 +264,7 @@ export function gotoRelative(delta: number): void {
   const list = navigationList();
   const idx = list.indexOf(s.currentDocId ?? '');
   const next = list[idx + delta];
-  if (next) set({ currentDocId: next, active: null });
+  if (next) set({ currentDocId: next, active: null, lens: null });
 }
 
 /** Nach "Geprüft": nächstes ungeprüftes Dokument der Reihenfolge, sonst zurück zur Übersicht. */
@@ -271,7 +274,7 @@ export function gotoNextUnverified(): void {
   const idx = list.indexOf(s.currentDocId ?? '');
   const ordered = [...list.slice(idx + 1), ...list.slice(0, Math.max(idx, 0))];
   const next = ordered.find((id) => getDoc(id)?.status === 'scanned');
-  if (next) set({ currentDocId: next, active: null });
+  if (next) set({ currentDocId: next, active: null, lens: null });
   else {
     toast('success', 'Alle Dokumente sind geprüft. Du kannst jetzt exportieren.', {
       action: { label: 'Exportieren', run: () => setDialog('export') }
@@ -286,6 +289,28 @@ export function setActive(active: ActiveTarget | null): void {
 
 export function focusFieldEditor(columnId: string): void {
   set({ focusField: { columnId, nonce: Date.now() } });
+}
+
+// Nach «Korrigieren» setzt der Linsenmodus beim nächsten Öffnen an derselben Stelle fort
+let lensResume: { docId: string; step: number } | null = null;
+
+export function openLens(): void {
+  const docId = get().currentDocId;
+  if (!docId) return;
+  const step = lensResume?.docId === docId ? lensResume.step : 0;
+  lensResume = null;
+  set({ lens: { docId, step }, active: null });
+}
+
+export function setLensStep(step: number): void {
+  const lens = get().lens;
+  if (lens) set({ lens: { ...lens, step } });
+}
+
+export function closeLens(resume = false): void {
+  const lens = get().lens;
+  lensResume = resume && lens ? lens : null;
+  set({ lens: null });
 }
 
 // ---------- Spalten / Einstellungen ----------
@@ -331,7 +356,8 @@ export function resetProject(): void {
     currentDocId: null,
     reviewQueue: null,
     active: null,
-    selected: []
+    selected: [],
+    lens: null
   });
 }
 
@@ -375,7 +401,8 @@ export function loadProjectPayload(payload: ProjectFilePayload, filePath: string
     currentDocId: null,
     reviewQueue: null,
     active: null,
-    selected: []
+    selected: [],
+    lens: null
   });
   if (missing) toast('warn', `${missing} Dokument(e) konnten nicht geladen werden (PDF fehlt in der Projektdatei).`);
 }
