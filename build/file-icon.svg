@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="fur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8913F"/>
+      <stop offset="1" stop-color="#DB5711"/>
+    </linearGradient>
+  </defs>
+  <path d="M12 3 H40 L54 17 V59 A2 2 0 0 1 52 61 H12 A2 2 0 0 1 10 59 V5 A2 2 0 0 1 12 3 Z" fill="#FFFFFF" stroke="#C9C1B4" stroke-width="1.5"/>
+  <path d="M40 3 V15 A2 2 0 0 0 42 17 H54" fill="#F1ECE4" stroke="#C9C1B4" stroke-width="1.5"/>
+  <g transform="translate(15 22) scale(0.53)">
+    <path d="M7 5 L24.5 19 H39.5 L57 5 L56 30 L32 59 L8 30 Z" fill="url(#fur)"/>
+    <path d="M8 30 L32 59 L22.5 36.5 Z" fill="#FFF5EC"/>
+    <path d="M56 30 L32 59 L41.5 36.5 Z" fill="#FFF5EC"/>
+    <path d="M19.5 30.8 L27.5 33.6 L20.4 35.4 Z" fill="#1F2328"/>
+    <path d="M44.5 30.8 L36.5 33.6 L43.6 35.4 Z" fill="#1F2328"/>
+    <path d="M28.6 52.4 H35.4 L32 57.6 Z" fill="#1F2328"/>
+  </g>
+</svg>

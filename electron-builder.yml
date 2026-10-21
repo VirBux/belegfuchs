@@ -1,0 +1,53 @@
+appId: ch.belegfuchs.app
+productName: Belegfuchs
+copyright: Copyright © 2026 Belegfuchs
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+  # Vulkan deckt NVIDIA, AMD und Intel ab – CUDA- und ARM-Binaries werden nicht mitgeliefert
+  - "!node_modules/@node-llama-cpp/*cuda*/**"
+  - "!node_modules/@node-llama-cpp/win-arm64/**"
+  - "!node_modules/@node-llama-cpp/**/*.lib"
+  # Quellcode von llama.cpp wird nur zum Selbstkompilieren benötigt
+  - "!node_modules/node-llama-cpp/llama/gitRelease.bundle"
+# Ohne asar laufen die nativen KI-Bibliotheken und die OCR-Worker direkt aus dem Programmordner
+asar: false
+npmRebuild: false
+electronLanguages:
+  - de
+  - en-US
+  - fr
+  - it
+extraResources:
+  - from: resources/tessdata
+    to: tessdata
+fileAssociations:
+  - ext: fuchs
+    name: Belegfuchs-Projekt
+    description: Belegfuchs Projektdatei
+    icon: build/fuchs-file.ico
+    role: Editor
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Belegfuchs
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  deleteAppDataOnUninstall: false
+  artifactName: Belegfuchs-Setup-${version}.${ext}
+portable:
+  artifactName: Belegfuchs-${version}-portable.${ext}

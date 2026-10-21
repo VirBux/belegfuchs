@@ -1,0 +1,6 @@
+node_modules/
+out/
+release/
+e2e-out/
+resources/tessdata/
+*.log

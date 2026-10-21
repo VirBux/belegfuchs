@@ -1,0 +1,53 @@
+{
+  "name": "belegfuchs",
+  "productName": "Belegfuchs",
+  "version": "0.1.0",
+  "description": "Belegfuchs – Kreditorenrechnungen per OCR und lokaler KI auswerten",
+  "author": "Belegfuchs",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "assets": "node scripts/prepare-assets.mjs",
+    "samples": "node scripts/make-samples.mjs",
+    "dist": "npm run assets && npm run build && electron-builder --win --publish never",
+    "dist:dir": "npm run assets && npm run build && electron-builder --win dir --publish never"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "fflate": "0.8.3",
+    "node-llama-cpp": "3.22.2",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.0.13",
+    "@resvg/resvg-js": "2.6.2",
+    "@tesseract.js-data/deu": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/fra": "1.0.0",
+    "@tesseract.js-data/ita": "1.0.0",
+    "@types/node": "24.19.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "45.0.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "6.0.0",
+    "lucide-react": "1.61.0",
+    "pdfjs-dist": "6.4.299",
+    "pdfkit": "0.20.2",
+    "playwright": "1.64.1",
+    "png-to-ico": "3.0.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5",
+    "zustand": "5.0.15"
+  }
+}
