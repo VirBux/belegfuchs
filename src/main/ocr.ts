@@ -1,10 +1,13 @@
 import { app } from 'electron';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { OEM, PSM, createScheduler, createWorker, type Page, type Scheduler, type Worker } from 'tesseract.js';
 import type { OcrRequest, OcrResult, OcrWordRaw } from '../shared/types';
 
 const SUPPORTED = new Set(['deu', 'eng', 'fra', 'ita']);
+/** Obergrenze für den Start eines Workers samt Laden der Sprachdaten */
+const INIT_TIMEOUT_MS = 60_000;
 
 let pageScheduler: Scheduler | null = null;
 let pageLangs = '';
@@ -22,19 +25,70 @@ function langList(langs: string[]): string[] {
   return list.length ? list : ['deu', 'eng'];
 }
 
+function hasGzipHeader(file: string): boolean {
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const head = Buffer.alloc(2);
+      return fs.readSync(fd, head, 0, 2, 0) === 2 && head[0] === 0x1f && head[1] === 0x8b;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
+}
+
+/** Sprachdaten vorab prüfen – fehlen sie, wartet tesseract.js sonst endlos auf den Worker. */
+function checkLangData(langs: string[]): string {
+  const dir = tessdataDir();
+  const file = (l: string) => path.join(dir, `${l}.traineddata.gz`);
+  const missing = langs.filter((l) => !fs.existsSync(file(l)));
+  // Leere oder fremde Dateien gar nicht erst laden: Ein fehlgeschlagenes Init meldet tesseract.js
+  // doppelt (reject und resolve), was im Main-Prozess als unbehandelter Fehler mit Dialog endet
+  const broken = langs.filter((l) => !missing.includes(l) && !hasGzipHeader(file(l)));
+  const hint = app.isPackaged ? 'bitte Belegfuchs neu installieren' : 'bitte «npm run assets» ausführen';
+  if (missing.length) throw new Error(`OCR-Sprachdaten fehlen (${missing.join(', ')} in resources/tessdata) – ${hint}.`);
+  if (broken.length) throw new Error(`OCR-Sprachdaten beschädigt (${broken.join(', ')} in resources/tessdata) – ${hint}.`);
+  return dir;
+}
+
 async function makeWorker(langs: string[], psm: PSM): Promise<Worker> {
-  const worker = await createWorker(langs, OEM.LSTM_ONLY, {
-    langPath: tessdataDir(),
-    cachePath: path.join(app.getPath('userData'), 'tesscache'),
-    cacheMethod: 'none',
-    gzip: true
-  });
-  await worker.setParameters({
-    tessedit_pageseg_mode: psm,
-    user_defined_dpi: '300',
-    preserve_interword_spaces: '0'
-  });
-  return worker;
+  const langPath = checkLangData(langs);
+  let fail: (err: Error) => void = () => {};
+  const failed = new Promise<never>((_, reject) => (fail = reject));
+  const timer = setTimeout(
+    () => fail(new Error(`Texterkennung ließ sich nicht starten (keine Antwort nach ${INIT_TIMEOUT_MS / 1000} s).`)),
+    INIT_TIMEOUT_MS
+  );
+  const starting = (async () => {
+    const worker = await createWorker(langs, OEM.LSTM_ONLY, {
+      langPath,
+      cachePath: path.join(app.getPath('userData'), 'tesscache'),
+      cacheMethod: 'none',
+      gzip: true,
+      // Ohne errorHandler wirft tesseract.js Ladefehler unbehandelt, und createWorker kehrt nie zurück
+      errorHandler: (err: unknown) => fail(new Error(`Texterkennung ließ sich nicht starten (${String(err).replace(/^Error: /, '')}).`))
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode: psm,
+      user_defined_dpi: '300',
+      preserve_interword_spaces: '0'
+    });
+    return worker;
+  })();
+  try {
+    return await Promise.race([starting, failed]);
+  } catch (err) {
+    // Kommt der Worker später doch noch hoch, gleich wieder beenden
+    void starting.then(
+      (w) => w.terminate(),
+      () => {}
+    );
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function getPageScheduler(langs: string[]): Promise<Scheduler> {
@@ -46,8 +100,15 @@ async function getPageScheduler(langs: string[]): Promise<Scheduler> {
   pageLangs = key;
   const count = Math.min(4, Math.max(1, Math.floor(os.cpus().length / 4)));
   pageInit = (async () => {
+    const results = await Promise.allSettled(Array.from({ length: count }, () => makeWorker(langs, PSM.AUTO)));
+    const workers = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failure) {
+      // Schon gestartete Worker nicht verwaist zurücklassen
+      await Promise.all(workers.map((w) => w.terminate()));
+      throw failure.reason;
+    }
     const scheduler = createScheduler();
-    const workers = await Promise.all(Array.from({ length: count }, () => makeWorker(langs, PSM.AUTO)));
     for (const w of workers) scheduler.addWorker(w);
     pageScheduler = scheduler;
     return scheduler;

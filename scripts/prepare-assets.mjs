@@ -1,6 +1,7 @@
 // Bereitet Build-Ressourcen vor: OCR-Sprachdaten kopieren, Programm- und Dateisymbole erzeugen.
 import { Resvg } from '@resvg/resvg-js';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pngToIco from 'png-to-ico';
@@ -8,10 +9,13 @@ import pngToIco from 'png-to-ico';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tessDir = path.join(root, 'resources', 'tessdata');
 const buildDir = path.join(root, 'build');
+// Über die Modulauflösung suchen, damit auch Worktrees ohne eigenes node_modules die Daten finden
+const require = createRequire(import.meta.url);
 
 fs.mkdirSync(tessDir, { recursive: true });
 for (const lang of ['deu', 'eng', 'fra', 'ita']) {
-  const src = path.join(root, 'node_modules', '@tesseract.js-data', lang, '4.0.0_best_int', `${lang}.traineddata.gz`);
+  const pkgDir = path.dirname(require.resolve(`@tesseract.js-data/${lang}/package.json`));
+  const src = path.join(pkgDir, '4.0.0_best_int', `${lang}.traineddata.gz`);
   const dst = path.join(tessDir, `${lang}.traineddata.gz`);
   if (!fs.existsSync(dst) || fs.statSync(dst).size !== fs.statSync(src).size) fs.copyFileSync(src, dst);
   console.log(`tessdata: ${lang} (${(fs.statSync(dst).size / 1e6).toFixed(1)} MB)`);

@@ -1,9 +1,10 @@
 import { isExtractable } from '../../../shared/columns';
 import { normMatch } from '../../../shared/parse';
 import { buildDocumentText, reservedKeys, slugKey } from '../../../shared/prompt';
-import type { AiFieldSpec, Box, Column, PageData } from '../../../shared/types';
+import type { AiFieldSpec, Box, Column, OcrRequest, OcrResult, PageData } from '../../../shared/types';
 import { getDoc, saveSettings, setField, setRuntime, startReviewMode, toast, updateDoc, useStore } from '../store';
 import { buildLineInfos } from './doctext';
+import { errorText } from './format';
 import { runHeuristics } from './heuristics';
 import { buildLayout } from './layout';
 import { applyAiResult } from './mapping';
@@ -36,6 +37,15 @@ export function buildAiSpecs(columns: Column[], only?: string[]): AiFieldSpec[] 
   return specs;
 }
 
+/** OCR im Main-Prozess; Fehler (z.B. fehlende Sprachdaten) lesbar weiterreichen */
+async function ocr(req: OcrRequest): Promise<OcrResult> {
+  try {
+    return await window.belegfuchs.ocr(req);
+  } catch (err) {
+    throw new Error(errorText(err));
+  }
+}
+
 async function runPool(count: number, limit: number, fn: (i: number) => Promise<void>): Promise<void> {
   let next = 0;
   const workers = Array.from({ length: Math.min(limit, count) }, async () => {
@@ -64,7 +74,7 @@ async function readPages(id: string, bytes: Uint8Array, t: { cancelled: boolean 
       const png = await canvasToPng(canvas);
       const { width, height } = canvas;
       canvas.width = canvas.height = 0;
-      const res = await window.belegfuchs.ocr({ png, langs: settings.ocrLangs, mode: 'page' });
+      const res = await ocr({ png, langs: settings.ocrLangs, mode: 'page' });
       raw = res.words.map((w) => ({
         text: w.text,
         x: w.x0 / width,
@@ -294,6 +304,6 @@ export async function ocrBox(docId: string, box: Box): Promise<string> {
   const pdf = await getPdf(docId, state.pdfBytes[docId]);
   const page = await pdf.getPage(box.page + 1);
   const png = await renderCropPng(page, box);
-  const res = await window.belegfuchs.ocr({ png, langs: state.settings.ocrLangs, mode: 'block' });
+  const res = await ocr({ png, langs: state.settings.ocrLangs, mode: 'block' });
   return res.text.replace(/[ \t]+/g, ' ').trim();
 }
