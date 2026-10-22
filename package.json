@@ -1,7 +1,7 @@
 {
   "name": "belegfuchs",
   "productName": "Belegfuchs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Belegfuchs – Kreditorenrechnungen per OCR und lokaler KI auswerten",
   "author": "Belegfuchs",
   "license": "UNLICENSED",
