@@ -6,7 +6,13 @@ export default defineConfig({
   main: {
     build: {
       // Laufzeit-Abhängigkeiten (node-llama-cpp, tesseract.js, exceljs, fflate) bleiben in node_modules
-      externalizeDeps: true
+      externalizeDeps: true,
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'ocr-worker': resolve(__dirname, 'src/main/ocr-worker.ts')
+        }
+      }
     }
   },
   preload: {

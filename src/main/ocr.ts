@@ -39,17 +39,19 @@ function hasGzipHeader(file: string): boolean {
   }
 }
 
+function dataHint(): string {
+  return app.isPackaged ? 'bitte Belegfuchs neu installieren' : 'bitte «npm run assets» ausführen';
+}
+
 /** Sprachdaten vorab prüfen – fehlen sie, wartet tesseract.js sonst endlos auf den Worker. */
 function checkLangData(langs: string[]): string {
   const dir = tessdataDir();
   const file = (l: string) => path.join(dir, `${l}.traineddata.gz`);
   const missing = langs.filter((l) => !fs.existsSync(file(l)));
-  // Leere oder fremde Dateien gar nicht erst laden: Ein fehlgeschlagenes Init meldet tesseract.js
-  // doppelt (reject und resolve), was im Main-Prozess als unbehandelter Fehler mit Dialog endet
+  // Leere oder fremde Dateien gleich mit verständlicher Meldung ablehnen statt mit «initialization failed»
   const broken = langs.filter((l) => !missing.includes(l) && !hasGzipHeader(file(l)));
-  const hint = app.isPackaged ? 'bitte Belegfuchs neu installieren' : 'bitte «npm run assets» ausführen';
-  if (missing.length) throw new Error(`OCR-Sprachdaten fehlen (${missing.join(', ')} in resources/tessdata) – ${hint}.`);
-  if (broken.length) throw new Error(`OCR-Sprachdaten beschädigt (${broken.join(', ')} in resources/tessdata) – ${hint}.`);
+  if (missing.length) throw new Error(`OCR-Sprachdaten fehlen (${missing.join(', ')} in resources/tessdata) – ${dataHint()}.`);
+  if (broken.length) throw new Error(`OCR-Sprachdaten beschädigt (${broken.join(', ')} in resources/tessdata) – ${dataHint()}.`);
   return dir;
 }
 
@@ -63,12 +65,15 @@ async function makeWorker(langs: string[], psm: PSM): Promise<Worker> {
   );
   const starting = (async () => {
     const worker = await createWorker(langs, OEM.LSTM_ONLY, {
+      // Eigener Einstieg, siehe ocr-worker.ts
+      workerPath: path.join(__dirname, 'ocr-worker.js'),
       langPath,
       cachePath: path.join(app.getPath('userData'), 'tesscache'),
       cacheMethod: 'none',
       gzip: true,
       // Ohne errorHandler wirft tesseract.js Ladefehler unbehandelt, und createWorker kehrt nie zurück
-      errorHandler: (err: unknown) => fail(new Error(`Texterkennung ließ sich nicht starten (${String(err).replace(/^Error: /, '')}).`))
+      errorHandler: (err: unknown) =>
+        fail(new Error(`OCR-Sprachdaten ließen sich nicht laden (${String(err).replace(/^Error: /, '')}) – ${dataHint()}.`))
     });
     await worker.setParameters({
       tessedit_pageseg_mode: psm,
