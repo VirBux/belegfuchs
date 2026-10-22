@@ -96,6 +96,10 @@ src/
 
 Die KI erhält den Rechnungstext Zeile für Zeile mit IDs (`[1.12] Total CHF 1'786.57`) und antwortet über eine Grammatik garantiert mit gültigem JSON. Belegfuchs sucht jeden Wert anschliessend im Dokument, um ihn im PDF zu markieren.
 
+## Erklärvideos
+
+Erklärvideos («App-Rundgang» aus echter App-UI, mit Sprecher und eingebrannten Untertiteln, ausgeliefert per WhatsApp) entstehen nach einem festen Produktionsstandard: [.claude/skills/marketing-video/SKILL.md](.claude/skills/marketing-video/SKILL.md). Die Projekte liegen unter `marketing-videos/<projekt>/`.
+
 ## Tests
 
 ```bash
