@@ -19,6 +19,7 @@ Die KI läuft vollständig auf dem eigenen PC. Rechnungsdaten verlassen den Rech
   - Rechts das PDF mit farbigen Markierungen (jede Feldart hat ihre Farbe), links die Ergebniszeile als Excel-Vorschau, Plausibilitätskontrollen und alle Werte zum Bearbeiten.
   - Korrigieren: Feld in der Kopfzeile wählen (oder Taste 1–9), dann im PDF auf einen Platzhalter klicken. Alternativ einen **Rahmen ziehen**: Angeschnittene Wörter werden dabei im Ausschnitt neu erkannt.
   - Als letzte Möglichkeit lässt sich jeder Wert frei von Hand eingeben.
+  - **Linsenmodus** (`L`): zeigt jeden gefundenen Wert einzeln und stark vergrössert neben seinem Ausschnitt aus dem PDF, um Abschreibefehler Zeichen für Zeichen zu erkennen. `Enter`/`→` = stimmt, `←` zurück, `K` korrigieren, `Esc` schliessen.
   - `Ctrl+Enter` markiert das Dokument als geprüft und springt zum nächsten.
 - **Eigene Spalten:** z.B. «Kundennummer» mit einem Hinweis für die KI. Die KI sucht sie automatisch, auch in bereits gescannten Dokumenten.
 - **Projektdatei `.fuchs`:** speichert den kompletten Stand inklusive der PDFs. So lässt sich ein Projekt überall wieder öffnen, auch per Doppelklick.
@@ -74,6 +75,7 @@ Die Builds sind nicht signiert. Windows SmartScreen zeigt deshalb beim ersten St
 | Wert exakt umranden | Rahmen im PDF ziehen |
 | Positionen erfassen | «Aus PDF erfassen», dann Zeilen anklicken oder einen Rahmen um die Tabelle ziehen |
 | Auswahl beenden | `Esc` |
+| Linsenmodus: Werte vergrössert mit dem PDF vergleichen | `L`, dann `Enter`/`→` stimmt, `←` zurück, `K` korrigieren |
 | Geprüft & weiter | `Ctrl+Enter` |
 | Dokument wechseln | `Alt+←` / `Alt+→` |
 | Zoomen | `Ctrl+Mausrad` |
@@ -100,4 +102,5 @@ Die KI erhält den Rechnungstext Zeile für Zeile mit IDs (`[1.12] Total CHF 1'7
 npm test                                   # Unit-Tests (Parser, Erkennung, Grammatik)
 node scripts/llm-eval.mjs                  # Prompt-Qualität direkt am Modell prüfen
 node scripts/e2e-flow.mjs <ausgabeordner>  # kompletter Ablauf in der gebauten App (vorher npm run build)
+node scripts/e2e-lens.mjs <ausgabeordner>  # Linsenmodus: feste Lage beim Weiterschalten, vorab gerenderte Ausschnitte
 ```

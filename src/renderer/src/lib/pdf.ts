@@ -125,22 +125,26 @@ export function canvasToPng(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   });
 }
 
+/** Rendert einen Seitenausschnitt (normierte Box) im gewünschten Massstab auf ein eigenes Canvas. */
+export async function renderBoxCanvas(page: PDFPageProxy, box: Box, scale: number, padPx = 0): Promise<HTMLCanvasElement> {
+  const viewport = page.getViewport({ scale });
+  const x = box.x * viewport.width - padPx;
+  const y = box.y * viewport.height - padPx;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(8, Math.ceil(box.w * viewport.width + padPx * 2));
+  canvas.height = Math.max(8, Math.ceil(box.h * viewport.height + padPx * 2));
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvas, canvasContext: ctx, viewport, transform: [1, 0, 0, 1, -x, -y] }).promise;
+  return canvas;
+}
+
 /** Rendert einen Seitenausschnitt in hoher Auflösung (für die OCR eines gezogenen Rahmens). */
 export async function renderCropPng(page: PDFPageProxy, box: Box): Promise<Uint8Array> {
   const base = page.getViewport({ scale: 1 });
   // Kleine Ausschnitte stärker vergrössern, damit Tesseract genug Pixel pro Zeichen hat
   const heightPt = box.h * base.height;
   const scale = Math.min(8, Math.max(4, 120 / Math.max(heightPt, 1)));
-  const viewport = page.getViewport({ scale });
-  const pad = 12;
-  const x = box.x * viewport.width - pad;
-  const y = box.y * viewport.height - pad;
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(8, Math.ceil(box.w * viewport.width + pad * 2));
-  canvas.height = Math.max(8, Math.ceil(box.h * viewport.height + pad * 2));
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  await page.render({ canvas, canvasContext: ctx, viewport, transform: [1, 0, 0, 1, -x, -y] }).promise;
-  return canvasToPng(canvas);
+  return canvasToPng(await renderBoxCanvas(page, box, scale, 12));
 }
