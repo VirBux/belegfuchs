@@ -9,6 +9,9 @@ import {
 } from '../../../shared/parse';
 import type { Column, ColumnType, DocMeta, FieldSource, Position, Settings } from '../../../shared/types';
 
+/** Fehlertext ohne Electron-Präfix bei IPC-Aufrufen */
+export const errorText = (err: unknown) => (err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err));
+
 export const isNumericValue = (v: string) => /^-?\d+(\.\d+)?$/.test(v);
 export const isIsoDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
 

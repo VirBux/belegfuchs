@@ -11,10 +11,10 @@ import {
   useStore
 } from '../store';
 import { buildExportPayload, type ExportScope } from './exportData';
+import { errorText } from './format';
 import { enqueueScan } from './scan';
 
 const basename = (p: string) => p.split(/[\\/]/).pop() ?? p;
-const errorText = (err: unknown) => (err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err));
 
 function afterAdd(added: string[]): void {
   if (!added.length) return;
