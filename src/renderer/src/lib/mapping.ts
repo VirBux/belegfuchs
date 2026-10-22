@@ -2,11 +2,13 @@
 import {
   addDays,
   amountToValue,
+  detectDecimalSeparator,
   findAmounts,
   findDates,
   normalizeCurrency,
   parseAmount,
   parseDate,
+  parseQuantityText,
   similarity
 } from '../../../shared/parse';
 import { parseLineRef } from '../../../shared/prompt';
@@ -159,9 +161,10 @@ export function fieldFromText(
   }
 }
 
-export function parseQuantity(text: string): number | null {
+/** Menge aus dem KI-Text; decimalSep ist der Dezimaltrenner des Dokuments ("6,459" in einer deutschen Rechnung = 6.459). */
+export function parseQuantity(text: string, decimalSep: '.' | ',' | null = null): number | null {
   const m = /-?\d[\d.,'’]*/.exec(text ?? '');
-  return m ? parseAmount(m[0]) : null;
+  return m ? parseQuantityText(m[0], decimalSep) : null;
 }
 
 function positionBox(infos: LineInfo[], pages: PageData[], ref: string, titel: string, preis: number | null): Box[] {
@@ -251,13 +254,14 @@ export function applyAiResult(ai: AiResult, specs: AiFieldSpec[], infos: LineInf
     }
   }
 
+  const decimalSep = detectDecimalSeparator(infos.map((li) => li.text).join('\n'));
   const positions: Position[] = ai.positionen
     .map((p) => {
       const preis = parseAmount(p.preis);
       return {
         id: uid('p_'),
         titel: p.titel.trim(),
-        menge: parseQuantity(p.menge),
+        menge: parseQuantity(p.menge, decimalSep),
         preis: preis === null ? null : Math.round(preis * 100) / 100,
         boxes: positionBox(infos, pages, p.zeile, p.titel, preis),
         source: 'ai' as const

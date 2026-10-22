@@ -1,7 +1,7 @@
 import { CircleCheck, Crosshair, Eye, FileSpreadsheet, Info, Plus, Trash, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { isFieldColumn } from '../../../shared/columns';
-import { amountToValue, formatAmount, formatDateTime, parseAmount } from '../../../shared/parse';
+import { amountToValue, formatAmount, formatDateTime, parseAmount, parseQuantityText } from '../../../shared/parse';
 import type { Column, DocMeta, Position } from '../../../shared/types';
 import { runChecks } from '../lib/checks';
 import { columnLetter, displayCell, formatFieldValue, isValidValue, parseInput, SOURCE_HINT, SOURCE_LABEL } from '../lib/format';
@@ -250,7 +250,8 @@ function PositionRow({ pos, index, doc, color }: { pos: Position; index: number;
       doc.positions.map((p) => (p.id === pos.id ? { ...p, ...patch, source: 'manual' } : p))
     );
   const commitNum = (text: string, key: 'menge' | 'preis') => {
-    const n = text.trim() ? parseAmount(text) : null;
+    // Die Menge steht als "6.459" im Feld: ein einzelner Trenner ist hier ein Dezimaltrenner
+    const n = !text.trim() ? null : key === 'menge' ? parseQuantityText(text, 'any') : parseAmount(text);
     const value = n === null ? null : key === 'preis' ? Number(amountToValue(n)) : n;
     if (value !== pos[key]) update({ [key]: value } as Partial<Position>);
     else if (key === 'preis') setPreis(fmtNum(pos.preis, true));

@@ -1,16 +1,22 @@
 // Linsenmodus: erfasste Werte Schritt für Schritt mit dem vergrösserten Ausschnitt aus dem PDF vergleichen.
 import { isFieldColumn } from '../../../shared/columns';
-import { findAmounts, formatAmount, parseAmount } from '../../../shared/parse';
-import type { Box, Column, DocMeta, FieldSource, PageData, Position, Settings } from '../../../shared/types';
+import { amountToValue, findAmounts, formatAmount, parseAmount, parseQuantityText } from '../../../shared/parse';
+import type { Box, Column, ColumnType, DocMeta, FieldSource, FieldValue, PageData, Position, Settings } from '../../../shared/types';
 import { normalizeWithMap, rangeBox, segmentAround, unionBox, type LineInfo } from './doctext';
-import { formatFieldValue } from './format';
+import { formatFieldValue, parseInput } from './format';
 import { wordsInBox } from './pick';
+
+/** Was im Linsenmodus direkt bearbeitet wird: ein Feld oder ein Teil einer Position. */
+export type LensEditTarget =
+  | { kind: 'field'; columnId: string; type: ColumnType }
+  | { kind: 'position'; positionId: string; key: 'titel' | 'menge' | 'preis' };
 
 /** Ein Wertepaar: links der erfasste Text, rechts die Fundstellen im PDF. */
 export interface LensPart {
   label: string;
   text: string;
   boxes: Box[];
+  edit: LensEditTarget;
   /** Keine eigene Fundstelle gefunden – es wird die ganze Zeile gezeigt. */
   wholeLine?: boolean;
   /** Summanden, wenn der Wert aus mehreren Fundstellen zusammengezählt ist (z.B. zwei MWST-Beträge). */
@@ -51,7 +57,15 @@ export function buildLensSteps(doc: DocMeta, columns: Column[], settings: Settin
       color: col.color,
       source: f.source,
       note: f.note,
-      parts: [{ label: col.label, text: formatFieldValue(col.type, f.value, settings), boxes: f.boxes, detail: sumDetail(f.raw, f.boxes.length, settings) }]
+      parts: [
+        {
+          label: col.label,
+          text: formatFieldValue(col.type, f.value, settings),
+          boxes: f.boxes,
+          edit: { kind: 'field', columnId: col.id, type: col.type },
+          detail: sumDetail(f.raw, f.boxes.length, settings)
+        }
+      ]
     });
   }
   const posCol = columns.find((c) => c.type === 'positions');
@@ -93,13 +107,37 @@ function titleRange(li: LineInfo, titel: string): Range | null {
   return i >= 0 ? segmentAround(li, map[i], map[i + head.length - 1] + 1) : null;
 }
 
+type Num = Range & { values: number[] };
+
+/**
+ * Zahlen der Zeile mit allen Lesarten: neben den Beträgen auch Werte mit mehr Nachkommastellen ("0,3695 €")
+ * und Mengen, deren Komma wie ein Tausendertrenner aussieht ("6,459" = 6459 oder 6.459).
+ */
+function numbersIn(text: string): Num[] {
+  const out: Num[] = findAmounts(text)
+    .filter((a) => !a.percent)
+    .map((a) => ({ start: a.start, end: a.end, values: [a.value] }));
+  for (const m of text.matchAll(/\d(?:[\d'’]|[.,](?=\d))*/g)) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if ((start > 0 && /[\p{L}\d.,'’_/]/u.test(text[start - 1])) || /^\s*%/.test(text.slice(end))) continue;
+    const values = [parseAmount(m[0]), parseQuantityText(m[0], 'any')].filter((v): v is number => v !== null);
+    const same = out.find((n) => n.start === start && n.end === end);
+    if (same) same.values.push(...values);
+    else out.push({ start, end, values });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
 function matchLine(li: LineInfo, pos: Position): { titel: Range | null; menge: Range | null; preis: Range | null } {
-  const amounts = findAmounts(li.text).filter((a) => !a.percent);
-  const preis = pos.preis === null ? null : (amounts.filter((a) => Math.abs(a.value - pos.preis!) < 0.005).pop() ?? null);
+  const nums = numbersIn(li.text);
+  // Preise sind auf Rappen/Cent gerundet erfasst, im PDF stehen sie manchmal genauer ("0,3695 €" = 0.37)
+  const near = (tol: number) => nums.filter((n) => n.values.some((v) => Math.abs(Math.abs(v) - Math.abs(pos.preis!)) < tol));
+  const preis = pos.preis === null ? null : (near(1e-6).pop() ?? near(0.005).pop() ?? null);
   const titel = titleRange(li, pos.titel);
   let menge: Range | null = null;
   if (pos.menge !== null) {
-    const hits = amounts.filter((a) => Math.abs(a.value - pos.menge!) < 1e-6 && a !== preis && (!preis || a.end <= preis.start));
+    const hits = nums.filter((n) => n.values.some((v) => Math.abs(v - pos.menge!) < 1e-6) && n !== preis && (!preis || n.end <= preis.start));
     // Positionsnummer am Zeilenanfang überspringen: bevorzugt nach dem Titel, sonst direkt vor dem Preis
     menge = (titel ? hits.find((a) => a.start >= titel.end) : undefined) ?? hits[hits.length - 1] ?? null;
   }
@@ -116,16 +154,53 @@ export function positionParts(pages: PageData[], infos: LineInfo[], pos: Positio
     const n = Number(Boolean(m.titel)) + Number(Boolean(m.menge)) + Number(Boolean(m.preis));
     if (!best || n > best.n) best = { li, m, n };
   }
-  const part = (label: string, text: string, range: Range | null | undefined): LensPart => {
+  const part = (label: string, key: 'titel' | 'menge' | 'preis', text: string): LensPart => {
+    const range = best?.m[key];
+    const edit: LensEditTarget = { kind: 'position', positionId: pos.id, key };
     const b = best && range ? rangeBox(pages, best.li, range.start, range.end) : null;
-    if (b) return { label, text, boxes: [b] };
-    return text ? { label, text, boxes: pos.boxes, wholeLine: true } : { label, text, boxes: [] };
+    if (b) return { label, text, boxes: [b], edit };
+    return text ? { label, text, boxes: pos.boxes, edit, wholeLine: true } : { label, text, boxes: [], edit };
   };
   return [
-    part('Titel', pos.titel, best?.m.titel),
-    part('Menge', pos.menge === null ? '' : String(pos.menge), best?.m.menge),
-    part('Preis', pos.preis === null ? '' : formatAmount(pos.preis, settings.numberFormat), best?.m.preis)
+    part('Titel', 'titel', pos.titel),
+    part('Menge', 'menge', pos.menge === null ? '' : String(pos.menge)),
+    part('Preis', 'preis', pos.preis === null ? '' : formatAmount(pos.preis, settings.numberFormat))
   ];
+}
+
+/** Ergebnis einer Bearbeitung im Linsenmodus: nichts zu tun, ungültig oder der neue Wert. */
+export type LensEditResult =
+  | { kind: 'none' }
+  | { kind: 'error'; message: string }
+  | { kind: 'field'; columnId: string; value: FieldValue }
+  | { kind: 'positions'; positions: Position[] };
+
+/**
+ * Eingabe aus dem Linsenmodus interpretieren. Die Fundstellen bleiben erhalten, damit der Schritt samt Ausschnitt
+ * stehen bleibt; ein leerer Wert ändert nichts (Löschen geht bewusst nur im Prüfmodus).
+ */
+export function applyLensEdit(doc: DocMeta, target: LensEditTarget, input: string): LensEditResult {
+  const text = input.trim();
+  if (!text) return { kind: 'none' };
+  if (target.kind === 'field') {
+    const prev = doc.fields[target.columnId];
+    const { value, valid } = parseInput(target.type, text);
+    if (!valid) return { kind: 'error', message: target.type === 'date' ? 'Datum nicht lesbar' : 'Keine gültige Zahl' };
+    if (prev?.value === value) return { kind: 'none' };
+    return { kind: 'field', columnId: target.columnId, value: { value, raw: text, source: 'manual', boxes: prev?.boxes ?? [] } };
+  }
+  const pos = doc.positions.find((p) => p.id === target.positionId);
+  if (!pos) return { kind: 'none' };
+  let patch: Partial<Position>;
+  if (target.key === 'titel') patch = { titel: text };
+  else {
+    // Mengen wie "6.459" oder "6,459" sind hier Dezimalzahlen, Preise werden wie im Prüfmodus auf 2 Stellen gerundet
+    const n = target.key === 'menge' ? parseQuantityText(text, 'any') : parseAmount(text);
+    if (n === null) return { kind: 'error', message: 'Keine gültige Zahl' };
+    patch = { [target.key]: target.key === 'preis' ? Number(amountToValue(n)) : n };
+  }
+  if (Object.entries(patch).every(([k, v]) => pos[k as keyof Position] === v)) return { kind: 'none' };
+  return { kind: 'positions', positions: doc.positions.map((p) => (p.id === pos.id ? { ...p, ...patch, source: 'manual' as const } : p)) };
 }
 
 /** Ausschnitt in normierten Seitenkoordinaten samt Grösse in PDF-Punkten. */

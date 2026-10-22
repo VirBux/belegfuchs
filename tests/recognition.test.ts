@@ -157,6 +157,26 @@ describe('KI-Ergebnis zuordnen', () => {
   });
 });
 
+describe('Mengen mit Dezimalkomma', () => {
+  const hetzner = page([
+    'Hetzner Online GmbH',
+    'Rechnung Nr. 082001244837',
+    'Pos | Anzahl | Bezeichnung | Einheit | Menge | Einzelpreis | Gesamt',
+    '5 | 1 | Volume | GB-Monate | 6,459 | 0,0572 € | 0,3695 €',
+    'Summe netto | 12,34 €'
+  ]);
+  const infos = buildLineInfos([hetzner]);
+  it('liest «6,459» in einer Rechnung mit Dezimalkomma als 6.459', () => {
+    const applied = applyAiResult(
+      { fields: {}, zahlungsfristTage: 0, mwst: [], waehrung: 'EUR', positionen: [{ zeile: '1.4', titel: '1 Volume', menge: '6,459', preis: '0,3695 €' }] },
+      [],
+      infos,
+      [hetzner]
+    );
+    expect(applied.positions[0]).toMatchObject({ titel: '1 Volume', menge: 6.459, preis: 0.37 });
+  });
+});
+
 describe('Eigene Firma vorschlagen', () => {
   it('erkennt die Firma, die auf allen Rechnungen steht', () => {
     const make = (sender: string) => ({ pages: [page([`${sender} | Hauptstrasse 1`, 'Belegfuchs GmbH', 'Seestrasse 5'])] });

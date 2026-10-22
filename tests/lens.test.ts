@@ -3,7 +3,7 @@ import { cloneColumns, DEFAULT_COLUMNS } from '../src/shared/columns';
 import { DEFAULT_SETTINGS } from '../src/shared/models';
 import type { Box, DocMeta, PageData, Word } from '../src/shared/types';
 import { buildLineInfos, wordsBox } from '../src/renderer/src/lib/doctext';
-import { buildLensSteps, cropRegions, fitScale, positionParts } from '../src/renderer/src/lib/lens';
+import { applyLensEdit, buildLensSteps, cropRegions, fitScale, positionParts } from '../src/renderer/src/lib/lens';
 
 /** Baut eine Seite aus Textzeilen; Spalten werden mit "|" getrennt. */
 function page(lines: string[]): PageData {
@@ -98,6 +98,54 @@ describe('Linsenmodus', () => {
     expect(parts[0].wholeLine).toBe(true);
     expect(parts[0].boxes).toEqual([line(2)]);
     expect(parts[2].wholeLine).toBeUndefined();
+  });
+
+  it('findet gerundete Preise und Mengen mit Dezimalkomma', () => {
+    const hp = page(['Pos | Anzahl | Bezeichnung | Einheit | Menge | Einzelpreis | Gesamt', '5 | 1 | Volume | GB-Monate | 6,459 | 0,0572 € | 0,3695 €']);
+    const hInfos = buildLineInfos([hp]);
+    const hLine = wordsBox([hp], 0, hp.lines[1].words)!;
+    const hText = (b: Box) =>
+      hp.words
+        .filter((w) => w.x >= b.x - 1e-9 && w.x + w.w <= b.x + b.w + 1e-9 && w.y >= b.y - 1e-9)
+        .map((w) => w.text)
+        .join(' ');
+    for (const menge of [6.459, 6459]) {
+      const parts = positionParts([hp], hInfos, { id: 'h', titel: '1 Volume', menge, preis: 0.37, boxes: [hLine], source: 'ai' }, DEFAULT_SETTINGS);
+      expect(parts.some((p) => p.wholeLine)).toBe(false);
+      expect(parts.map((p) => hText(p.boxes[0]))).toEqual(['1 Volume', '6,459', '0,3695']);
+    }
+  });
+
+  it('übernimmt korrigierte Felder mit den bisherigen Fundstellen', () => {
+    const total = { kind: 'field', columnId: 'totalbetrag', type: 'amount' } as const;
+    const r = applyLensEdit(doc, total, "1'300.5");
+    expect(r).toEqual({ kind: 'field', columnId: 'totalbetrag', value: { value: '1300.50', raw: "1'300.5", source: 'manual', boxes: doc.fields.totalbetrag.boxes } });
+    // Der Schritt bleibt im Linsenmodus, der neue Wert erscheint formatiert
+    const edited = { ...doc, fields: { ...doc.fields, totalbetrag: (r as Extract<typeof r, { kind: 'field' }>).value } };
+    const after = buildLensSteps(edited, cloneColumns(DEFAULT_COLUMNS), DEFAULT_SETTINGS, infos).steps;
+    expect(after.map((s) => s.key)).toEqual(steps.map((s) => s.key));
+    expect(after[2].parts[0].text).toBe('1’300.50');
+    expect(applyLensEdit(doc, total, '1221')).toEqual({ kind: 'none' });
+    expect(applyLensEdit(doc, total, '   ')).toEqual({ kind: 'none' });
+    expect(applyLensEdit(doc, total, 'zwölf')).toEqual({ kind: 'error', message: 'Keine gültige Zahl' });
+    expect(applyLensEdit(doc, { kind: 'field', columnId: 'rechnungsdatum', type: 'date' }, '32.13.2026')).toEqual({ kind: 'error', message: 'Datum nicht lesbar' });
+  });
+
+  it('übernimmt Titel, Menge und Preis einer Position einzeln', () => {
+    const edit = (key: 'titel' | 'menge' | 'preis', text: string) => applyLensEdit(doc, { kind: 'position', positionId: 'p1', key }, text);
+    const pos = (text: string, key: 'titel' | 'menge' | 'preis') => {
+      const r = edit(key, text);
+      return r.kind === 'positions' ? r.positions.find((p) => p.id === 'p1') : r;
+    };
+    expect(pos('Elektriker', 'titel')).toMatchObject({ titel: 'Elektriker', menge: 12, preis: 1176, source: 'manual', boxes: [line(2)] });
+    expect(pos('6.459', 'menge')).toMatchObject({ menge: 6.459 });
+    expect(pos('6,459', 'menge')).toMatchObject({ menge: 6.459 });
+    expect(pos('1’176.00', 'preis')).toEqual({ kind: 'none' });
+    expect(pos('0.3695', 'preis')).toMatchObject({ preis: 0.37 });
+    expect(edit('menge', 'viele')).toEqual({ kind: 'error', message: 'Keine gültige Zahl' });
+    expect(edit('titel', '')).toEqual({ kind: 'none' });
+    const r = edit('preis', '99');
+    expect(r.kind === 'positions' && r.positions.filter((p) => p.id !== 'p1')).toEqual(doc.positions.slice(1));
   });
 
   it('fasst Boxen derselben Zeile zusammen und stapelt entfernte', () => {

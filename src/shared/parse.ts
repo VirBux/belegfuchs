@@ -70,6 +70,27 @@ export function parseAmount(input: string | number | null | undefined): number |
   return negative ? -value : value;
 }
 
+/**
+ * Menge lesen. Anders als bei Beträgen ist "6,459" hier oft eine Dezimalzahl: Steht genau ein Trenner vor genau
+ * drei Ziffern und ist er laut decimalSep der Dezimaltrenner ('any': jeder), gilt er nicht als Tausendertrenner.
+ */
+export function parseQuantityText(input: string, decimalSep: '.' | ',' | 'any' | null): number | null {
+  const value = parseAmount(input);
+  if (value === null || !decimalSep) return value;
+  const block = (input.match(/\d[\d.,'’]*/)?.[0] ?? '').replace(/[.,]+$/, '');
+  const m = /^(\d+)([.,])(\d{3})$/.exec(block);
+  if (!m || (decimalSep !== 'any' && m[2] !== decimalSep)) return value;
+  const n = Number(`${m[1]}.${m[3]}`);
+  return value < 0 ? -n : n;
+}
+
+/** Dezimaltrenner eines Dokuments anhand der Beträge mit zwei Nachkommastellen; null, wenn unklar. */
+export function detectDecimalSeparator(text: string): '.' | ',' | null {
+  const comma = (text.match(/\d,\d{2}(?![\d.,])/g) ?? []).length;
+  const dot = (text.match(/\d\.\d{2}(?![\d.,])/g) ?? []).length;
+  return comma > dot ? ',' : dot > comma ? '.' : null;
+}
+
 const CURRENCY_SPACE_GROUP =
   /(?:CHF|EUR|USD|GBP|SFr\.?|Fr\.|€|\$|£)\s*(\d{1,3}(?: \d{3})+[.,](?:\d{2}|[-–]{1,2}))(?!\d)/g;
 const AMOUNT_RE =

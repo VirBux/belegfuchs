@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, findAmounts, findDates, formatAmount, normalizeCurrency, parseAmount, parseDate } from '../src/shared/parse';
+import {
+  addDays,
+  detectDecimalSeparator,
+  findAmounts,
+  findDates,
+  formatAmount,
+  normalizeCurrency,
+  parseAmount,
+  parseDate,
+  parseQuantityText
+} from '../src/shared/parse';
 
 describe('parseAmount', () => {
   it.each([
@@ -21,6 +31,28 @@ describe('parseAmount', () => {
     ['abc', null]
   ])('%s → %s', (input, expected) => {
     expect(parseAmount(input)).toBe(expected);
+  });
+});
+
+describe('Mengen', () => {
+  it.each([
+    ['6,459', ',', 6.459],
+    ['6,459', '.', 6459],
+    ['6.459', 'any', 6.459],
+    ['6,459 GB', 'any', 6.459],
+    ['6,459', null, 6459],
+    ['1.234,5', 'any', 1234.5],
+    ["1'000", 'any', 1000],
+    ['12', ',', 12],
+    ['-2,500', ',', -2.5]
+  ] as const)('%s mit Dezimaltrenner %s → %s', (input, sep, expected) => {
+    expect(parseQuantityText(input, sep)).toBe(expected);
+  });
+
+  it('erkennt den Dezimaltrenner des Dokuments', () => {
+    expect(detectDecimalSeparator('Volume 6,459 0,0572 € 0,3695 €\nSumme 12,34 €')).toBe(',');
+    expect(detectDecimalSeparator("Total CHF 1'571.25\nDatum 21.10.2026")).toBe('.');
+    expect(detectDecimalSeparator('Datum 21.10.2026')).toBeNull();
   });
 });
 

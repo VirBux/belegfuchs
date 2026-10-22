@@ -1,11 +1,11 @@
 import { ArrowLeft, ArrowRight, CircleCheck, Equal, Pencil, X, ZoomIn } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from 'react';
 import type { Box, DocMeta, PageData } from '../../../shared/types';
 import { buildLineInfos } from '../lib/doctext';
 import { SOURCE_HINT, SOURCE_LABEL } from '../lib/format';
-import { buildLensSteps, cropRegions, fitScale, type CropRegion, type LensPart, type LensStep } from '../lib/lens';
+import { applyLensEdit, buildLensSteps, cropRegions, fitScale, type CropRegion, type LensPart, type LensStep } from '../lib/lens';
 import { getPdf, renderBoxCanvas } from '../lib/pdf';
-import { closeLens, focusFieldEditor, gotoNextUnverified, revealBox, setActive, setLensStep, setVerified, useStore } from '../store';
+import { closeLens, focusFieldEditor, gotoNextUnverified, revealBox, setActive, setField, setLensStep, setPositions, setVerified, useStore } from '../store';
 import { cls } from './ui';
 
 // Feste Masse der Bühne (siehe .lens-* in styles.css), damit beim Weiterschalten nichts springt
@@ -108,8 +108,8 @@ function Crop({ docId, bytes, plan }: { docId: string; bytes: Uint8Array; plan: 
   return <canvas ref={ref} className="lens-crop" style={{ width: plan.cssW, height: plan.cssH }} />;
 }
 
-/** Text so gross wie möglich (bis max) in die feste Fläche einpassen. */
-function FitText({ text, max, pane }: { text: string; max: number; pane: Size }) {
+/** Text so gross wie möglich (bis max) in die feste Fläche einpassen; die gewählte Grösse landet in sizeRef. */
+function FitText({ text, max, pane, sizeRef }: { text: string; max: number; pane: Size; sizeRef: MutableRefObject<number> }) {
   const ref = useRef<HTMLSpanElement>(null);
   useLayoutEffect(() => {
     const el = ref.current;
@@ -125,7 +125,8 @@ function FitText({ text, max, pane }: { text: string; max: number; pane: Size })
     };
     // Kurze Werte lieber etwas kleiner auf einer Zeile als umgebrochen
     if (!fit(false, max * 0.75)) fit(true, 14);
-  }, [text, max, pane.w, pane.h]);
+    sizeRef.current = parseFloat(el.style.fontSize) || max;
+  }, [text, max, pane.w, pane.h, sizeRef]);
   return (
     <div className="lens-fit">
       <span ref={ref} className={cls('lens-value', !text && 'empty')}>
@@ -135,14 +136,72 @@ function FitText({ text, max, pane }: { text: string; max: number; pane: Size })
   );
 }
 
-function LensRow({ part, rows, pane, doc, bytes }: { part: LensPart; rows: number; pane: Size; doc: DocMeta; bytes: Uint8Array }) {
+/** Bearbeitung im Linsenmodus: welcher Teil, der getippte Text und ggf. warum er nicht übernommen wurde. */
+interface LensEditState {
+  part: number;
+  text: string;
+  error?: string;
+}
+
+/** Eingabefeld an der Stelle des Werts: gleiche Schrift, mittig; wird kleiner, wenn der Text nicht mehr passt. */
+function LensInput({ edit, size, onChange, onBlur }: { edit: LensEditState; size: number; onChange: (text: string) => void; onBlur: () => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let s = size;
+    el.style.fontSize = `${s}px`;
+    while (s > 14 && el.scrollWidth > el.clientWidth) el.style.fontSize = `${(s -= 2)}px`;
+  }, [edit.text, size]);
+  return (
+    <div className="lens-fit">
+      <input
+        ref={ref}
+        className="lens-value lens-input"
+        value={edit.text}
+        spellCheck={false}
+        aria-invalid={Boolean(edit.error)}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+      />
+    </div>
+  );
+}
+
+interface RowEdit {
+  state: LensEditState | null;
+  start: () => void;
+  change: (text: string) => void;
+  blur: () => void;
+}
+
+function LensRow({ part, rows, pane, doc, bytes, edit }: { part: LensPart; rows: number; pane: Size; doc: DocMeta; bytes: Uint8Array; edit: RowEdit }) {
   const plans = planCrops(part, doc.pages, pane, rows);
+  const size = useRef(fontFor(rows));
+  const editing = edit.state;
   return (
     <div className="lens-row">
-      <div className="lens-pane">
+      <div
+        className={cls('lens-pane', 'editable', editing && 'editing', editing?.error && 'invalid')}
+        onClick={() => !editing && edit.start()}
+        title={editing ? undefined : 'Klicken oder E, um den Wert hier zu korrigieren'}
+      >
         {rows > 1 && <span className="lens-tag">{part.label}</span>}
-        <FitText text={part.text} max={fontFor(rows)} pane={pane} />
-        {part.detail && <span className="lens-detail">{part.detail}</span>}
+        {!editing && <Pencil className="lens-edit-icon" />}
+        {editing ? (
+          <LensInput edit={editing} size={size.current} onChange={edit.change} onBlur={edit.blur} />
+        ) : (
+          <FitText text={part.text} max={fontFor(rows)} pane={pane} sizeRef={size} />
+        )}
+        {editing ? (
+          <span className={cls('lens-detail', editing.error && 'error')}>{editing.error ?? 'Enter übernimmt · Esc verwirft'}</span>
+        ) : (
+          part.detail && <span className="lens-detail">{part.detail}</span>
+        )}
       </div>
       <div className="lens-eq">
         <Equal />
@@ -214,7 +273,46 @@ export function LensDialog({ doc, bytes }: { doc: DocMeta; bytes: Uint8Array }) 
     }
   }, [stage, steps, index, doc, bytes]);
 
-  const go = useCallback((delta: number) => setLensStep(Math.max(0, Math.min(steps.length, index + delta))), [index, steps.length]);
+  // Wert direkt im Linsenmodus korrigieren; editRef ist sofort aktuell, auch zwischen zwei Renderläufen
+  const [edit, setEditState] = useState<LensEditState | null>(null);
+  const editRef = useRef<LensEditState | null>(null);
+  const putEdit = useCallback((e: LensEditState | null) => {
+    editRef.current = e;
+    setEditState(e);
+  }, []);
+  useEffect(() => putEdit(null), [current?.key, putEdit]);
+
+  /** Übernimmt die Eingabe; false, wenn sie ungültig ist und die Bearbeitung offen bleibt. */
+  const commitEdit = useCallback((): boolean => {
+    const e = editRef.current;
+    const part = e && current?.parts[e.part];
+    if (!e || !part) return true;
+    const r = applyLensEdit(doc, part.edit, e.text);
+    if (r.kind === 'error') {
+      putEdit({ ...e, error: r.message });
+      return false;
+    }
+    putEdit(null);
+    if (r.kind === 'field') setField(doc.id, r.columnId, r.value);
+    else if (r.kind === 'positions') setPositions(doc.id, r.positions);
+    return true;
+  }, [current, doc, putEdit]);
+
+  const startEdit = useCallback(
+    (i: number) => {
+      const part = current?.parts[i];
+      if (part && commitEdit()) putEdit({ part: i, text: part.text });
+    },
+    [current, commitEdit, putEdit]
+  );
+
+  const go = useCallback(
+    (delta: number) => {
+      if (!commitEdit()) return;
+      setLensStep(Math.max(0, Math.min(steps.length, index + delta)));
+    },
+    [index, steps.length, commitEdit]
+  );
 
   const correct = useCallback(() => {
     if (!current) return;
@@ -231,10 +329,24 @@ export function LensDialog({ doc, bytes }: { doc: DocMeta; bytes: Uint8Array }) 
     gotoNextUnverified();
   }, [doc.id]);
 
-  // Tastatur: →/Enter weiter, ← zurück, K korrigieren, Esc schliesst
+  // Tastatur: →/Enter weiter, ← zurück, E/F2 bearbeiten, K korrigieren, Esc schliesst
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (useStore.getState().confirm) return;
+      const editing = editRef.current;
+      if (editing) {
+        // Während der Bearbeitung gehören die Tasten dem Eingabefeld; nur Enter, Esc und Tab steuern sie
+        if (e.isComposing) return;
+        if (e.key === 'Enter') commitEdit();
+        else if (e.key === 'Escape') putEdit(null);
+        else if (e.key === 'Tab') {
+          const next = editing.part + (e.shiftKey ? -1 : 1);
+          if (current?.parts[next]) startEdit(next);
+        } else return;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const plain = !e.ctrlKey && !e.altKey && !e.metaKey;
       let handled = true;
       if (e.key === 'Escape') closeLens();
@@ -245,6 +357,7 @@ export function LensDialog({ doc, bytes }: { doc: DocMeta; bytes: Uint8Array }) 
       } else if (e.key === 'ArrowRight' && plain) go(1);
       else if (e.key === 'ArrowLeft' && plain) go(-1);
       else if (e.key.toLowerCase() === 'k' && plain && !done) correct();
+      else if (((e.key.toLowerCase() === 'e' && plain) || e.key === 'F2') && !done) startEdit(0);
       else handled = false;
       if (handled) {
         e.preventDefault();
@@ -253,7 +366,7 @@ export function LensDialog({ doc, bytes }: { doc: DocMeta; bytes: Uint8Array }) 
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [done, go, correct, verifyAndNext]);
+  }, [done, current, go, correct, verifyAndNext, commitEdit, startEdit, putEdit]);
 
   const progress = steps.length ? (done ? 1 : (index + 1) / steps.length) : 1;
 
@@ -300,7 +413,24 @@ export function LensDialog({ doc, bytes }: { doc: DocMeta; bytes: Uint8Array }) 
                 )}
               </div>
             ) : (
-              stage && current.parts.map((part, i) => <LensRow key={`${current.key}-${i}`} part={part} rows={rows} pane={paneSize(stage, rows)} doc={doc} bytes={bytes} />)
+              stage &&
+              current.parts.map((part, i) => (
+                <LensRow
+                  key={`${current.key}-${i}`}
+                  part={part}
+                  rows={rows}
+                  pane={paneSize(stage, rows)}
+                  doc={doc}
+                  bytes={bytes}
+                  edit={{
+                    state: edit?.part === i ? edit : null,
+                    start: () => startEdit(i),
+                    change: (text) => putEdit({ part: i, text }),
+                    // Klick ausserhalb übernimmt; nach Esc oder Enter ist editRef schon leer
+                    blur: () => editRef.current?.part === i && commitEdit()
+                  }}
+                />
+              ))
             )}
           </div>
         </div>

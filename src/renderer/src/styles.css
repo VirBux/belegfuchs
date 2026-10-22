@@ -2253,6 +2253,50 @@ textarea.input {
   border: 1px solid var(--border);
   border-radius: 12px;
 }
+/* Wert direkt bearbeiten: nur Farbe und Schatten ändern sich, damit nichts springt */
+.lens-pane.editable {
+  cursor: text;
+}
+.lens-pane.editable:hover:not(.editing) {
+  border-color: color-mix(in srgb, var(--c) 45%, var(--border));
+}
+.lens-pane.editing {
+  border-color: var(--c);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent);
+}
+.lens-pane.invalid {
+  border-color: var(--err);
+  background: var(--err-bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 18%, transparent);
+}
+.lens-edit-icon {
+  position: absolute;
+  top: 9px;
+  right: 11px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.lens-pane.editable:hover .lens-edit-icon {
+  opacity: 1;
+}
+.lens-input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  white-space: nowrap;
+}
+.lens-pane.invalid .lens-input {
+  color: var(--err);
+}
+.lens-detail.error {
+  color: var(--err);
+  font-weight: 600;
+}
 .lens-pane.paper {
   background: #fff;
   border-color: color-mix(in srgb, var(--c) 35%, var(--border));

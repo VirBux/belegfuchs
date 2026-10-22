@@ -3,10 +3,11 @@ import {
   addDays,
   amountToValue,
   detectCurrency,
+  detectDecimalSeparator,
   findAmounts,
   findDates,
   normMatch,
-  parseAmount,
+  parseQuantityText,
   type FoundAmount
 } from '../../../shared/parse';
 import type { Box, FieldValue, PageData, Position } from '../../../shared/types';
@@ -271,7 +272,7 @@ function findTitle(infos: LineInfo[], pages: PageData[]): FieldValue | null {
 const QTY = /^\d+(?:[.,']\d+)*\s*(?:x|×|stk\.?|stück|st\.?|std\.?|h|m2?|m²|m³|kg|g|l|lt|pce|pcs|pc|pauschal|psch\.?|tage?|jours?|giorni|mt|pz)?$/i;
 
 /** Zerlegt eine Positionszeile in Titel, Menge und Preis. */
-export function parsePositionLine(li: LineInfo, pages: PageData[]): Position | null {
+export function parsePositionLine(li: LineInfo, pages: PageData[], decimalSep: '.' | ',' | null = null): Position | null {
   const amounts = findAmounts(li.text).filter((a) => !a.percent);
   const money = amounts.filter((a) => a.hasDecimals);
   const priceAmount = money[money.length - 1] ?? amounts[amounts.length - 1];
@@ -290,7 +291,7 @@ export function parsePositionLine(li: LineInfo, pages: PageData[]): Position | n
     if (s === titleSeg || (priceAmount && s.start >= priceAmount.start)) continue;
     if (s.start < titleSeg.start && /^\d{1,3}[.)]?$/.test(s.text)) continue; // Positionsnummer
     if (QTY.test(s.text)) {
-      menge = parseAmount(s.text);
+      menge = parseQuantityText(s.text, decimalSep);
       break;
     }
   }
@@ -307,6 +308,7 @@ export function parsePositionLine(li: LineInfo, pages: PageData[]): Position | n
 function findPositions(infos: LineInfo[], pages: PageData[], totalLine: LineInfo | null): Position[] {
   const headerIdx = infos.findIndex((li) => countHeaderWords(li.text) >= 2 && moneyAmounts(li.text).length === 0);
   if (headerIdx < 0) return [];
+  const decimalSep = detectDecimalSeparator(infos.map((li) => li.text).join('\n'));
   const result: Position[] = [];
   for (let i = headerIdx + 1; i < infos.length && result.length < 100; i++) {
     const li = infos[i];
@@ -321,7 +323,7 @@ function findPositions(infos: LineInfo[], pages: PageData[], totalLine: LineInfo
     // Betrag muss am Zeilenende stehen
     const last = amounts[amounts.length - 1];
     if (li.text.slice(last.end).replace(/[\s€$£]|CHF|EUR/g, '').length > 2) continue;
-    const pos = parsePositionLine(li, pages);
+    const pos = parsePositionLine(li, pages, decimalSep);
     if (pos) result.push(pos);
   }
   return result;

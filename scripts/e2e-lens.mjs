@@ -4,6 +4,7 @@
 // --ohne-ki: nur regelbasierte Erkennung, schnell).
 // Prüft, dass Wert und Ausschnitt beim Weiterschalten an derselben Stelle bleiben
 // und die nächsten Ausschnitte vorab gerendert sind.
+// Prüft ausserdem die Korrektur direkt im Linsenmodus (E/F2/Klick, Enter, Esc, Tab).
 // Sichert die Einstellungen des Nutzers vorher und stellt sie danach wieder her.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -196,6 +197,94 @@ try {
   await win.waitForSelector('.lens');
   const resumed = await geometry();
   check(resumed.count === before.count, `Linsenmodus setzt bei ${resumed.count} fort`);
+
+  // Wert direkt im Linsenmodus korrigieren: E, tippen, Enter – Store, Anzeige und Flächen prüfen
+  {
+    const st = await getState();
+    const docNow = st.docs.find((d) => d.id === st.currentDocId);
+    const amountCol = st.columns.find((c) => c.enabled && c.type === 'amount' && docNow.fields[c.id]?.value && docNow.fields[c.id].boxes.length);
+    if (!amountCol) check(false, 'Dokument 1 hat einen Betrag mit Fundstelle zum Bearbeiten');
+    else {
+      for (let i = 0; i < 60 && (await geometry()).name !== amountCol.label; i++) await win.keyboard.press(i < 30 ? 'ArrowLeft' : 'ArrowRight');
+      const g0 = await geometry();
+      const orig = docNow.fields[amountCol.id];
+      const editGeo = () =>
+        win.evaluate(() => {
+          const input = document.querySelector('.lens-input');
+          const b = input?.getBoundingClientRect();
+          return {
+            focused: Boolean(input) && document.activeElement === input,
+            value: input?.value ?? null,
+            invalid: Boolean(document.querySelector('.lens-pane.invalid')),
+            input: b ? { cx: b.x + b.width / 2, cy: b.y + b.height / 2, w: b.width, h: b.height, x: b.x, y: b.y } : null
+          };
+        });
+      const unshifted = (g) => same(g.lens, g0.lens) && same(g.next, g0.next) && g.rows.every((r, k) => same(r.left, g0.rows[k].left) && same(r.right, g0.rows[k].right));
+      check(g0.name === amountCol.label, `Schritt «${g0.name}» (${g0.rows[0]?.text}) zum Bearbeiten gefunden`);
+
+      await win.keyboard.press('e');
+      await win.waitForSelector('.lens-input');
+      const e1 = await editGeo();
+      const g1 = await geometry();
+      check(e1.focused && e1.value === g0.rows[0].text, `E öffnet das Eingabefeld mit «${e1.value}»`);
+      check(unshifted(g1) && centered(e1.input, g1.rows[0].left, 2), 'Eingabefeld liegt mittig in derselben Fläche, nichts verschiebt sich');
+      await win.screenshot({ path: shot('doc1-bearbeiten.png') });
+      // Während des Tippens greifen die Tasten des Dialogs nicht
+      await win.keyboard.press('ArrowRight');
+      await win.keyboard.press('k');
+      const e2 = await editGeo();
+      check((await geometry()).count === g0.count && e2.focused && (await win.$('.lens')) !== null, '→ und K wirken beim Tippen nicht auf den Dialog');
+
+      // Ungültige Eingabe wird markiert und nicht übernommen, Esc verwirft nur die Bearbeitung
+      await win.keyboard.press('Control+a');
+      await win.keyboard.type('zwölf');
+      await win.keyboard.press('Enter');
+      const e3 = await editGeo();
+      const s3 = await getState();
+      check(e3.invalid && e3.value === 'zwölf' && s3.docs.find((d) => d.id === docNow.id).fields[amountCol.id].value === orig.value, 'ungültige Eingabe ist markiert und nicht übernommen');
+      await win.screenshot({ path: shot('doc1-ungueltig.png') });
+      await win.keyboard.press('Escape');
+      const e4 = await editGeo();
+      check(e4.value === null && (await win.$('.lens')) !== null && (await geometry()).rows[0].text === g0.rows[0].text, 'Esc verwirft die Bearbeitung, der Dialog bleibt offen');
+
+      // Gültiger Wert: Enter übernimmt, bleibt auf dem Schritt und zeigt den Wert neu formatiert
+      await win.keyboard.press('F2');
+      await win.waitForSelector('.lens-input');
+      await win.keyboard.press('Control+a');
+      await win.keyboard.type('1234,5');
+      await win.keyboard.press('Enter');
+      await win.waitForSelector('.lens-input', { state: 'detached' });
+      await win.waitForTimeout(150);
+      const g5 = await geometry();
+      const f5 = (await getState()).docs.find((d) => d.id === docNow.id).fields[amountCol.id];
+      check(f5.value === '1234.50' && f5.source === 'manual' && JSON.stringify(f5.boxes) === JSON.stringify(orig.boxes), `Store: ${amountCol.label} = ${f5.value}, Quelle ${f5.source}, Fundstellen behalten`);
+      check(g5.count === g0.count && g5.rows[0].text.replace(/\D/g, '') === '123450' && g5.rows[0].text !== '1234,5', `Anzeige bleibt auf ${g5.count} und zeigt «${g5.rows[0].text}»`);
+      check(unshifted(g5) && g5.rows[0].crops.length === g0.rows[0].crops.length, 'nach dem Übernehmen sind Flächen und Ausschnitt unverändert');
+      await win.screenshot({ path: shot('doc1-uebernommen.png') });
+      await win.keyboard.press('Enter');
+      check((await geometry()).count !== g0.count, 'zweites Enter geht weiter zum nächsten Schritt');
+
+      // Position: Menge per Klick bearbeiten, Tab springt zum Preis
+      for (let i = 0; i < 60 && (await geometry()).rows.length !== 3; i++) await win.keyboard.press('ArrowRight');
+      const p0 = await geometry();
+      if (p0.rows.length === 3) {
+        const posBefore = (await getState()).docs.find((d) => d.id === docNow.id).positions;
+        await win.mouse.click(p0.rows[1].left.cx, p0.rows[1].left.cy);
+        await win.waitForSelector('.lens-input');
+        await win.keyboard.press('Control+a');
+        await win.keyboard.type('6,459');
+        await win.keyboard.press('Tab');
+        const e6 = await editGeo();
+        check(e6.focused && Math.abs(e6.input.cy - p0.rows[2].left.cy) < 2,'Tab übernimmt die Menge und bearbeitet den Preis');
+        await win.keyboard.press('Escape');
+        const p1 = await geometry();
+        const posAfter = (await getState()).docs.find((d) => d.id === docNow.id).positions;
+        const changed = posAfter.find((p, k) => p.menge !== posBefore[k].menge);
+        check(changed?.menge === 6.459 && JSON.stringify(changed.boxes) === JSON.stringify(posBefore.find((p) => p.id === changed.id).boxes), `Position: Menge 6,459 als ${changed?.menge} gespeichert, Fundstelle behalten`);
+        check(p1.count === p0.count && p1.rows[1].text === '6.459' && unshifted({ ...p1, rows: [] }) && p1.rows.every((r, k) => same(r.left, p0.rows[k].left) && same(r.right, p0.rows[k].right)), `Position bleibt auf ${p1.count}, Menge zeigt «${p1.rows[1].text}», Flächen unverändert`);
+      }
+    }
+  }
 
   // Zusammenfassung: Enter markiert als geprüft und geht zum nächsten Dokument
   for (let i = 0; i < doc1Steps.length && (await geometry()).rows.length; i++) await win.keyboard.press('Enter');
